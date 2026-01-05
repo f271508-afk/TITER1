@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>多邊形全室磁磚分頁規劃器</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { background-color: #f1f5f9; font-family: 'Segoe UI', system-ui, sans-serif; }
+        .canvas-bg {
+            background-color: #cbd5e1;
+            background-image: radial-gradient(#94a3b8 1px, transparent 1px);
+            background-size: 20px 20px;
+        }
+        .panel { background: white; border-radius: 12px; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1); }
+        input[type="range"] { height: 6px; -webkit-appearance: none; background: #cbd5e1; border-radius: 3px; }
+        input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 16px; height: 16px; background: #3b82f6; border-radius: 50%; cursor: pointer; }
+        .tab-active { border-bottom: 3px solid #3b82f6; color: #3b82f6; font-weight: bold; }
+        select { appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%2364748b'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 0.5rem center; background-size: 1.5em 1.5em; }
+    </style>
+</head>
+<body class="p-4 md:p-6">
+    <div class="max-w-full mx-auto">
+        <header class="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
+            <div>
+                <h1 class="text-2xl font-bold text-slate-800">多邊形全室磁磚分頁規劃器</h1>
+                <p class="text-slate-500 text-sm">地坪分割規劃：具備點位編號標示與精算邏輯</p>
+            </div>
+            <div class="flex gap-3">
+                <div class="bg-blue-600 text-white px-6 py-2 rounded-lg shadow-md">
+                    <p class="text-xs opacity-80 uppercase tracking-wider">預估總購片數 (含損耗)</p>
+                    <p class="text-xl font-bold">地: <span id="grand-floor-count">0</span> | 牆: <span id="grand-wall-count">0</span></p>
+                </div>
+            </div>
+        </header>
+
+        <div class="grid grid-cols-1 xl:grid-cols-4 gap-6">
+            <!-- 左側控制面板 -->
+            <div class="xl:col-span-1 space-y-4">
+                <div class="panel p-5">
+                    <h3 class="font-bold text-slate-700 mb-4 border-b pb-2 flex justify-between items-center">
+                        <span>1. 空間輪廓點位 (cm)</span>
+                        <button onclick="addPoint()" class="text-blue-600 text-xs font-bold hover:underline">+ 新增點</button>
+                    </h3>
+                    <div id="points-container" class="space-y-2 max-h-40 overflow-y-auto mb-4 pr-2"></div>
+                </div>
+
+                <div class="panel p-5">
+                    <h3 class="font-bold text-slate-700 mb-4 border-b pb-2 italic text-blue-600">2. 規格與樣式</h3>
+                    <div class="space-y-3">
+                        <div class="grid grid-cols-2 gap-2">
+                            <label class="col-span-2 text-xs font-bold text-slate-400 uppercase">地磚尺寸 (長/寬)</label>
+                            <input type="number" id="tile-f-w" value="60" class="w-full border rounded px-3 py-2 outline-none" oninput="updateAll()">
+                            <input type="number" id="tile-f-h" value="60" class="w-full border rounded px-3 py-2 outline-none" oninput="updateAll()">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-400 uppercase mb-1">地磚鋪貼樣式</label>
+                            <select id="tile-style" class="w-full border rounded px-3 py-2 outline-none bg-white" onchange="updateAll()">
+                                <option value="grid">標準十字縫 (Grid)</option>
+                                <option value="stagger">1/2 交錯縫 (Running Bond)</option>
+                            </select>
+                        </div>
+                        <div class="grid grid-cols-2 gap-2">
+                            <label class="col-span-2 text-xs font-bold text-slate-400 uppercase">壁磚尺寸 (寬/高)</label>
+                            <input type="number" id="tile-w-w" value="30" class="w-full border rounded px-3 py-2 outline-none" oninput="updateAll()">
+                            <input type="number" id="tile-w-h" value="60" class="w-full border rounded px-3 py-2 outline-none" oninput="updateAll()">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-400 uppercase">牆面總高度</label>
+                            <input type="number" id="wall-height" value="240" class="w-full border rounded px-3 py-2 outline-none" oninput="updateAll()">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="panel p-5">
+                    <h3 class="font-bold text-slate-700 mb-4 border-b pb-2 italic text-orange-600">3. 分割位移調整</h3>
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block text-xs text-slate-500 mb-1">起磚基準</label>
+                            <select id="align-mode" class="w-full border rounded px-3 py-2 outline-none bg-white mb-2" onchange="updateAll()">
+                                <option value="origin">從座標原點 (0,0) 開始</option>
+                                <option value="center">從空間幾何中心開始</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs text-slate-500 mb-1">水平偏移 (X軸調整)</label>
+                            <input type="range" id="offset-x" min="-100" max="100" value="0" class="w-full" oninput="updateAll()">
+                        </div>
+                        <div>
+                            <label class="block text-xs text-slate-500 mb-1">垂直偏移 (Y軸調整)</label>
+                            <input type="range" id="offset-y" min="-100" max="100" value="0" class="w-full" oninput="updateAll()">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 右側展示與頁籤區 -->
+            <div class="xl:col-span-3 space-y-4">
+                <div class="flex border-b border-slate-200 overflow-x-auto bg-white rounded-t-xl px-4" id="tabs-header"></div>
+
+                <div class="panel p-6 canvas-bg min-h-[600px] flex flex-col items-center justify-center overflow-auto">
+                    <div id="view-title" class="mb-4 text-slate-600 font-bold bg-white/90 px-6 py-2 rounded-full shadow-sm border border-slate-200">地坪平面圖</div>
+                    <canvas id="mainCanvas" class="shadow-2xl bg-white"></canvas>
+                </div>
+                
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div class="panel p-4 border-l-4 border-blue-500">
+                        <p class="text-xs text-slate-500 uppercase">區域面積</p>
+                        <p class="text-lg font-bold"><span id="stat-area">0</span> m²</p>
+                    </div>
+                    <div class="panel p-4 border-l-4 border-emerald-500">
+                        <p class="text-xs text-slate-500 uppercase">精算預估片數</p>
+                        <p class="text-lg font-bold"><span id="stat-count">0</span> 片</p>
+                    </div>
+                    <div class="panel p-4 bg-slate-800 text-white rounded-xl">
+                        <p class="text-xs opacity-70 uppercase">計算規則</p>
+                        <p class="text-sm mt-1">裁切面積 &lt; 50% 以 0.5 片計；&gt; 50% 以 1 片計。</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('mainCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        let points = [
+            {x: 0, y: 0},
+            {x: 300, y: 0},
+            {x: 300, y: 200},
+            {x: 150, y: 200},
+            {x: 150, y: 400},
+            {x: 0, y: 400}
+        ];
+
+        let activeTab = 'floor';
+
+        function initPointsUI() {
+            const container = document.getElementById('points-container');
+            container.innerHTML = '';
+            points.forEach((p, i) => {
+                const div = document.createElement('div');
+                div.className = 'point-row flex gap-2 items-center text-sm p-1 rounded';
+                div.innerHTML = `
+                    <span class="w-6 text-slate-400 font-mono text-center">${i+1}</span>
+                    <input type="number" value="${p.x}" class="w-20 border rounded px-1" oninput="editPoint(${i}, 'x', this.value)">
+                    <input type="number" value="${p.y}" class="w-20 border rounded px-1" oninput="editPoint(${i}, 'y', this.value)">
+                    <button onclick="removePoint(${i})" class="text-red-300 hover:text-red-500">✕</button>
+                `;
+                container.appendChild(div);
+            });
+            updateTabs();
+        }
+
+        function updateTabs() {
+            const header = document.getElementById('tabs-header');
+            let html = `<button onclick="switchTab('floor')" class="px-6 py-3 transition-all ${activeTab === 'floor' ? 'tab-active' : 'text-slate-400 hover:text-slate-600'}">地坪總覽</button>`;
+            for (let i = 0; i < points.length; i++) {
+                const nextIdx = (i + 1) % points.length;
+                html += `<button onclick="switchTab(${i})" class="px-6 py-3 transition-all ${activeTab === i ? 'tab-active' : 'text-slate-400 hover:text-slate-600'}">牆面 ${i+1} (點${i+1}→${nextIdx+1})</button>`;
+            }
+            header.innerHTML = html;
+        }
+
+        function switchTab(id) {
+            activeTab = id;
+            updateTabs();
+            updateAll();
+        }
+
+        function editPoint(idx, axis, val) {
+            points[idx][axis] = parseFloat(val) || 0;
+            updateAll();
+        }
+
+        function addPoint() {
+            const last = points[points.length - 1];
+            points.push({x: last.x + 50, y: last.y});
+            initPointsUI();
+            updateAll();
+        }
+
+        function removePoint(idx) {
+            if (points.length <= 3) return;
+            points.splice(idx, 1);
+            initPointsUI();
+            if (activeTab >= points.length) activeTab = 'floor';
+            updateAll();
+        }
+
+        function updateAll() {
+            const tfw = parseFloat(document.getElementById('tile-f-w').value) || 1;
+            const tfh = parseFloat(document.getElementById('tile-f-h').value) || 1;
+            const tww = parseFloat(document.getElementById('tile-w-w').value) || 1;
+            const twh = parseFloat(document.getElementById('tile-w-h').value) || 1;
+            const wallH = parseFloat(document.getElementById('wall-height').value) || 1;
+            const style = document.getElementById('tile-style').value;
+            const align = document.getElementById('align-mode').value;
+            
+            const oxPct = parseFloat(document.getElementById('offset-x').value) / 100;
+            const oyPct = parseFloat(document.getElementById('offset-y').value) / 100;
+
+            const minX = Math.min(...points.map(p => p.x));
+            const maxX = Math.max(...points.map(p => p.x));
+            const minY = Math.min(...points.map(p => p.y));
+            const maxY = Math.max(...points.map(p => p.y));
+            const polyW = maxX - minX;
+            const polyH = maxY - minY;
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            let baseOffsetX = (oxPct * tfw);
+            let baseOffsetY = (oyPct * tfh);
+
+            if (align === 'center') {
+                baseOffsetX += (polyW % tfw) / 2;
+                baseOffsetY += (polyH % tfh) / 2;
+            }
+
+            if (activeTab === 'floor') {
+                document.getElementById('view-title').innerText = "地坪平面圖";
+                const count = drawFloorView(polyW, polyH, minX, minY, tfw, tfh, baseOffsetX, baseOffsetY, style);
+                document.getElementById('stat-count').innerText = count;
+            } else {
+                const p1 = points[activeTab];
+                const nextIdx = (activeTab + 1) % points.length;
+                const p2 = points[nextIdx];
+                const edgeLen = Math.sqrt(Math.pow(p2.x - p1.x, 2) + Math.pow(p2.y - p1.y, 2));
+                document.getElementById('view-title').innerText = `牆面 ${activeTab + 1} 立面圖 (由 點${activeTab+1} 到 點${nextIdx+1}，長度: ${Math.round(edgeLen)}cm)`;
+                const count = drawWallView(edgeLen, wallH, tww, twh, baseOffsetX, baseOffsetY, activeTab, nextIdx);
+                document.getElementById('stat-count').innerText = count;
+            }
+
+            calculateGrandTotal(tfw, tfh, tww, twh, wallH, baseOffsetX, baseOffsetY, style);
+        }
+
+        function calculateTilePieces(usedArea, unitArea) {
+            const ratio = usedArea / unitArea;
+            if (ratio <= 0) return 0;
+            return ratio <= 0.5 ? 0.5 : 1.0;
+        }
+
+        function drawFloorView(polyW, polyH, minX, minY, tw, th, offX, offY, style) {
+            const scale = Math.min(500 / polyW, 500 / polyH, 1.5);
+            canvas.width = polyW * scale + 100;
+            canvas.height = polyH * scale + 100;
+            const tx = 50 - minX * scale;
+            const ty = 50 - minY * scale;
+
+            ctx.save();
+            ctx.translate(tx, ty);
+
+            const path = new Path2D();
+            points.forEach((p, i) => {
+                if (i === 0) path.moveTo(p.x * scale, p.y * scale);
+                else path.lineTo(p.x * scale, p.y * scale);
+            });
+            path.closePath();
+
+            ctx.fillStyle = '#f8fafc';
+            ctx.fill(path);
+            
+            let totalPieces = 0;
+            const unitArea = tw * th;
+
+            // 繪製磚塊
+            for (let y = minY - th*2; y < polyH + minY + th*2; y += th) {
+                const isOddRow = Math.round((y-minY)/th) % 2 !== 0;
+                const rowOffset = (style === 'stagger' && isOddRow) ? tw/2 : 0;
+                
+                for (let x = minX - tw*2; x < polyW + minX + tw*2; x += tw) {
+                    const tx_start = x + offX + rowOffset;
+                    const ty_start = y + offY;
+                    const intersectArea = getIntersectArea(tx_start, ty_start, tw, th, points);
+                    if (intersectArea > 0) {
+                        totalPieces += calculateTilePieces(intersectArea, unitArea);
+                        ctx.save();
+                        ctx.beginPath();
+                        ctx.rect(tx_start * scale, ty_start * scale, tw * scale, th * scale);
+                        ctx.strokeStyle = '#cbd5e1';
+                        ctx.stroke();
+                        ctx.restore();
+                    }
+                }
+            }
+
+            // 繪製輪廓與點位標示
+            ctx.strokeStyle = '#3b82f6';
+            ctx.lineWidth = 3;
+            ctx.stroke(path);
+
+            points.forEach((p, i) => {
+                ctx.fillStyle = '#3b82f6';
+                ctx.beginPath();
+                ctx.arc(p.x * scale, p.y * scale, 12, 0, Math.PI * 2);
+                ctx.fill();
+                
+                ctx.fillStyle = 'white';
+                ctx.font = 'bold 12px Arial';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(i + 1, p.x * scale, p.y * scale);
+            });
+
+            ctx.restore();
+            document.getElementById('stat-area').innerText = (calculatePolyArea(points) / 10000).toFixed(2);
+            return totalPieces;
+        }
+
+        function drawWallView(w, h, tw, th, offX, offY, p1Idx, p2Idx) {
+            const scale = Math.min(550 / w, 400 / h, 1.5);
+            canvas.width = w * scale + 100;
+            canvas.height = h * scale + 100;
+            ctx.save();
+            ctx.translate(50, 50);
+            
+            ctx.fillStyle = '#f8fafc';
+            ctx.fillRect(0, 0, w * scale, h * scale);
+
+            let totalPieces = 0;
+            const unitArea = tw * th;
+
+            for (let x = -tw*2 + (offX % tw); x < w + tw; x += tw) {
+                for (let y = -th*2 + (offY % th); y < h + th; y += th) {
+                    const xOverlap = Math.max(0, Math.min(x + tw, w) - Math.max(x, 0));
+                    const yOverlap = Math.max(0, Math.min(y + th, h) - Math.max(y, 0));
+                    const overlapArea = xOverlap * yOverlap;
+
+                    if (overlapArea > 0) {
+                        totalPieces += calculateTilePieces(overlapArea, unitArea);
+                        ctx.strokeStyle = '#e2e8f0';
+                        ctx.strokeRect(x * scale, y * scale, tw * scale, th * scale);
+                    }
+                }
+            }
+
+            // 繪製牆面外框
+            ctx.strokeStyle = '#10b981';
+            ctx.lineWidth = 4;
+            ctx.strokeRect(0, 0, w * scale, h * scale);
+
+            // 標示起點與終點點位
+            const labelPoint = (label, x, y) => {
+                ctx.fillStyle = '#10b981';
+                ctx.beginPath();
+                ctx.arc(x, y, 15, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.fillStyle = 'white';
+                ctx.font = 'bold 12px Arial';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(label, x, y);
+            };
+
+            labelPoint(p1Idx + 1, 0, h * scale + 25);
+            labelPoint(p2Idx + 1, w * scale, h * scale + 25);
+            
+            ctx.fillStyle = '#64748b';
+            ctx.font = '12px Arial';
+            ctx.fillText('起始點', 0, h * scale + 48);
+            ctx.fillText('結束點', w * scale, h * scale + 48);
+
+            ctx.restore();
+            document.getElementById('stat-area').innerText = (w * h / 10000).toFixed(2);
+            return totalPieces;
+        }
+
+        function getIntersectArea(tx, ty, tw, th, poly) {
+            let insideCount = 0;
+            const samples = 4;
+            for (let i = 0; i < samples; i++) {
+                for (let j = 0; j < samples; j++) {
+                    const px = tx + (tw / samples) * (i + 0.5);
+                    const py = ty + (th / samples) * (j + 0.5);
+                    if (isPointInPoly({x: px, y: py}, poly)) insideCount++;
+                }
+            }
+            return (insideCount / (samples * samples)) * (tw * th);
+        }
+
+        function isPointInPoly(pt, poly) {
+            let isInside = false;
+            for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+                if (((poly[i].y > pt.y) !== (poly[j].y > pt.y)) &&
+                    (pt.x < (poly[j].x - poly[i].x) * (pt.y - poly[i].y) / (poly[j].y - poly[i].y) + poly[i].x)) {
+                    isInside = !isInside;
+                }
+            }
+            return isInside;
+        }
+
+        function calculateGrandTotal(tfw, tfh, tww, twh, wallH, offX, offY, style) {
+            const minX = Math.min(...points.map(p => p.x));
+            const maxX = Math.max(...points.map(p => p.x));
+            const minY = Math.min(...points.map(p => p.y));
+            const maxY = Math.max(...points.map(p => p.y));
+            
+            let fTotal = 0;
+            const fUnit = tfw * tfh;
+            for (let y = minY - tfh; y < maxY + tfh; y += tfh) {
+                const rowOff = (style === 'stagger' && Math.round((y-minY)/tfh)%2!==0) ? tfw/2 : 0;
+                for (let x = minX - tfw; x < maxX + tfw; x += tfw) {
+                    const area = getIntersectArea(x + offX + rowOff, y + offY, tfw, tfh, points);
+                    fTotal += calculateTilePieces(area, fUnit);
+                }
+            }
+
+            let wTotal = 0;
+            const wUnit = tww * twh;
+            for (let i = 0; i < points.length; i++) {
+                const p1 = points[i];
+                const p2 = points[(i + 1) % points.length];
+                const w = Math.sqrt(Math.pow(p2.x - p1.x, 2) + Math.pow(p2.y - p1.y, 2));
+                for (let x = -tww + (offX % tww); x < w; x += tww) {
+                    for (let y = -twh + (offY % twh); y < wallH; y += twh) {
+                        const xOverlap = Math.max(0, Math.min(x + tww, w) - Math.max(x, 0));
+                        const yOverlap = Math.max(0, Math.min(y + twh, wallH) - Math.max(y, 0));
+                        wTotal += calculateTilePieces(xOverlap * yOverlap, wUnit);
+                    }
+                }
+            }
+            document.getElementById('grand-floor-count').innerText = Math.ceil(fTotal * 1.05);
+            document.getElementById('grand-wall-count').innerText = Math.ceil(wTotal * 1.05);
+        }
+
+        function calculatePolyArea(poly) {
+            let area = 0;
+            for (let i = 0; i < poly.length; i++) {
+                let j = (i + 1) % poly.length;
+                area += poly[i].x * poly[j].y;
+                area -= poly[j].x * poly[i].y;
+            }
+            return Math.abs(area / 2);
+        }
+
+        window.onload = () => {
+            initPointsUI();
+            updateAll();
+        };
+        window.onresize = updateAll;
+    </script>
+</body>
+</html>
